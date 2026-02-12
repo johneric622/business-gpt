@@ -202,6 +202,17 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
     }
   }, [input]);
 
+  // Auto-focus textarea after AI response completes
+  useEffect(() => {
+    if (!isLoading && textareaRef.current) {
+      // Small delay to ensure UI has updated
+      const timer = setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading]);
+
 
   async function handleSend() {
     if (!input.trim() || isLoading) return;
