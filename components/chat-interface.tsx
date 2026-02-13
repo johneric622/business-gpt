@@ -128,23 +128,36 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const isCreatingWelcomeRef = useRef(false);
 
   // Load existing messages
   useEffect(() => {
+    let isCancelled = false;
+    isCreatingWelcomeRef.current = false;
+
     async function loadMessages() {
       try {
         const res = await fetch(`/api/plans/${planId}/messages`);
         if (res.ok) {
           const data = await res.json();
           const loadedMessages = data.messages || [];
+          
+          // Check if welcome message already exists
+          const welcomeContent = "Hello! I'm here to help you create a comprehensive business plan. Let's start with the basics - what's the name of your business, and what industry are you in?";
+          const hasWelcomeMessage = loadedMessages.some(
+            (msg: Message) => msg.role === "assistant" && msg.content === welcomeContent
+          );
+          
           setMessages(loadedMessages);
           
-          // If no messages, start the conversation
-          if (loadedMessages.length === 0) {
+          // If no messages and no welcome message exists, start the conversation
+          if (loadedMessages.length === 0 && !hasWelcomeMessage && !isCreatingWelcomeRef.current && !isCancelled) {
+            isCreatingWelcomeRef.current = true;
+            
             const welcomeMessage: Message = {
               id: `msg-${Date.now()}`,
               role: "assistant",
-              content: "Hello! I'm here to help you create a comprehensive business plan. Let's start with the basics - what's the name of your business, and what industry are you in?",
+              content: welcomeContent,
               createdAt: new Date().toISOString(),
             };
             
@@ -152,7 +165,7 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
             
             // Save to database
             try {
-              await fetch(`/api/plans/${planId}/messages`, {
+              const saveRes = await fetch(`/api/plans/${planId}/messages`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -160,12 +173,52 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
                   content: welcomeMessage.content,
                 }),
               });
+              
+              // If save failed or was cancelled, reload messages to check if another instance created it
+              if (!saveRes.ok && !isCancelled) {
+                const reloadRes = await fetch(`/api/plans/${planId}/messages`);
+                if (reloadRes.ok) {
+                  const reloadData = await reloadRes.json();
+                  setMessages(reloadData.messages || []);
+                }
+              }
             } catch (error) {
               console.error("Failed to save initial message:", error);
+              // Reload messages in case another instance created it
+              if (!isCancelled) {
+                try {
+                  const reloadRes = await fetch(`/api/plans/${planId}/messages`);
+                  if (reloadRes.ok) {
+                    const reloadData = await reloadRes.json();
+                    setMessages(reloadData.messages || []);
+                  }
+                } catch (reloadError) {
+                  console.error("Failed to reload messages:", reloadError);
+                }
+              }
+            } finally {
+              isCreatingWelcomeRef.current = false;
             }
           }
         } else {
-          // If request fails, still start conversation
+          // If request fails, still start conversation (only if not cancelled and not already creating)
+          if (!isCancelled && !isCreatingWelcomeRef.current) {
+            isCreatingWelcomeRef.current = true;
+            const welcomeMessage: Message = {
+              id: `msg-${Date.now()}`,
+              role: "assistant",
+              content: "Hello! I'm here to help you create a comprehensive business plan. Let's start with the basics - what's the name of your business, and what industry are you in?",
+              createdAt: new Date().toISOString(),
+            };
+            setMessages([welcomeMessage]);
+            isCreatingWelcomeRef.current = false;
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load messages:", error);
+        // Start conversation even if loading fails (only if not cancelled and not already creating)
+        if (!isCancelled && !isCreatingWelcomeRef.current) {
+          isCreatingWelcomeRef.current = true;
           const welcomeMessage: Message = {
             id: `msg-${Date.now()}`,
             role: "assistant",
@@ -173,20 +226,18 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
             createdAt: new Date().toISOString(),
           };
           setMessages([welcomeMessage]);
+          isCreatingWelcomeRef.current = false;
         }
-      } catch (error) {
-        console.error("Failed to load messages:", error);
-        // Start conversation even if loading fails
-        const welcomeMessage: Message = {
-          id: `msg-${Date.now()}`,
-          role: "assistant",
-          content: "Hello! I'm here to help you create a comprehensive business plan. Let's start with the basics - what's the name of your business, and what industry are you in?",
-          createdAt: new Date().toISOString(),
-        };
-        setMessages([welcomeMessage]);
       }
     }
+    
     loadMessages();
+    
+    // Cleanup function to prevent race conditions
+    return () => {
+      isCancelled = true;
+      isCreatingWelcomeRef.current = false;
+    };
   }, [planId]);
 
   // Auto-scroll to bottom when new messages arrive
