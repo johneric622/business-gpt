@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -165,17 +166,23 @@ export function PlansSidebar() {
         <SidebarHeader className="p-3">
           {!isCollapsed ? (
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg">
+              <Link 
+                href="/" 
+                className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-sidebar-accent transition-colors"
+              >
                 <MessageSquare className="h-5 w-5 text-sidebar-foreground" />
-              </div>
+              </Link>
               <div className="flex-1" />
               <SidebarTrigger className="h-8 w-8" variant="ghost" />
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg">
+              <Link 
+                href="/" 
+                className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-sidebar-accent transition-colors"
+              >
                 <MessageSquare className="h-5 w-5 text-sidebar-foreground" />
-              </div>
+              </Link>
               <SidebarTrigger className="h-8 w-8" variant="ghost" />
             </div>
           )}

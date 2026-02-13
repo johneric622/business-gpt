@@ -493,7 +493,7 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
   return (
     <div className="flex h-full flex-col">
       {/* Messages area */}
-      <ScrollArea className="flex-1 px-4 pt-16 md:pt-4">
+      <ScrollArea className="flex-1 px-4 pt-16 md:pt-4 pb-40">
         <div className="mx-auto max-w-3xl space-y-6 py-6" ref={scrollRef}>
           {messages.map((message) => (
             <div
@@ -518,8 +518,8 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
                   className={cn(
                     "max-w-[80%] rounded-2xl px-4 py-3",
                     message.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-secondary text-secondary-foreground"
+                      ? "bg-muted text-foreground"
+                      : "bg-muted/50 text-foreground"
                   )}
                 >
                   {message.role === "assistant" ? (
@@ -571,8 +571,8 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
         </div>
       </ScrollArea>
 
-      {/* Input area */}
-      <div className="bg-background">
+      {/* Input area - Fixed at bottom */}
+      <div className="fixed bottom-0 left-0 right-0 bg-background z-10 md:left-[var(--sidebar-width)] md:group-data-[state=collapsed]/sidebar-wrapper:left-[var(--sidebar-width-icon)]">
         <div className="mx-auto max-w-3xl p-4">
           <div className="flex gap-2">
             <Textarea
