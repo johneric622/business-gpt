@@ -50,7 +50,7 @@ function MobileMenuButton() {
   if (!isMobile) return null;
   
   return (
-    <div className="absolute left-4 top-4 z-10">
+    <div className="fixed left-4 top-14 z-50">
       <Button
         variant="ghost"
         size="icon"
