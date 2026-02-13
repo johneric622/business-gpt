@@ -545,20 +545,14 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
                 size="sm"
                 onClick={() => handleCopyMessage(message.id, message.content)}
                 className={cn(
-                  "h-7 px-2 text-xs text-muted-foreground hover:text-foreground",
+                  "h-7 w-7 p-0 text-muted-foreground hover:text-foreground",
                   message.role === "user" ? "mr-11" : "ml-11"
                 )}
               >
                 {copiedMessageId === message.id ? (
-                  <>
-                    <Check className="h-3 w-3 mr-1" />
-                    Copied
-                  </>
+                  <Check className="h-3 w-3" />
                 ) : (
-                  <>
-                    <Copy className="h-3 w-3 mr-1" />
-                    Copy
-                  </>
+                  <Copy className="h-3 w-3" />
                 )}
               </Button>
             </div>
