@@ -28,7 +28,7 @@ REQUIRED SECTIONS:
 Write the complete business plan now based on the conversation history provided.`;
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const user = await getSessionUser();
@@ -37,6 +37,8 @@ export async function POST(
   }
 
   const { id } = await params;
+  const body = await req.json().catch(() => ({}));
+  const instructions = body.instructions || "";
   const sql = getDb();
 
   // Verify plan belongs to user
@@ -80,11 +82,15 @@ export async function POST(
   const stream = new ReadableStream({
     async start(controller) {
       try {
+        let prompt = `Here is the conversation history with the user about their business plan:\n\n${conversationText}\n\nPlease generate a complete, professional business plan based on all the information gathered in this conversation. Extract all relevant details about the business, market, operations, team, finances, and goals.`;
+        
+        if (instructions.trim()) {
+          prompt += `\n\nIMPORTANT: The user has requested the following changes to the plan:\n${instructions}\n\nPlease regenerate the business plan incorporating these specific instructions while maintaining all the information from the conversation history.`;
+        }
+
         const messages = [
           new SystemMessage(SYSTEM_PROMPT),
-          new HumanMessage(
-            `Here is the conversation history with the user about their business plan:\n\n${conversationText}\n\nPlease generate a complete, professional business plan based on all the information gathered in this conversation. Extract all relevant details about the business, market, operations, team, finances, and goals.`
-          ),
+          new HumanMessage(prompt),
         ];
 
         const stream = await model.stream(messages);

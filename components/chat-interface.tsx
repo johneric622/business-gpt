@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Send, Download, Sparkles, Copy, Check } from "lucide-react";
@@ -119,6 +120,8 @@ interface ChatInterfaceProps {
 }
 
 export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -131,6 +134,43 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isCreatingWelcomeRef = useRef(false);
   const hasAutoRenamedRef = useRef(false);
+  const hasLoadedPlanFromUrlRef = useRef(false);
+
+  // Reset ref when planId changes
+  useEffect(() => {
+    hasLoadedPlanFromUrlRef.current = false;
+  }, [planId]);
+
+  // Check URL parameter on mount to show plan if ?view=plan
+  useEffect(() => {
+    const viewParam = searchParams.get("view");
+    if (viewParam === "plan" && !hasLoadedPlanFromUrlRef.current) {
+      hasLoadedPlanFromUrlRef.current = true;
+      // Load the generated plan from the database if it exists
+      async function loadGeneratedPlan() {
+        try {
+          const res = await fetch(`/api/plans/${planId}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.plan?.generated_plan_text) {
+              setGeneratedPlan(data.plan.generated_plan_text);
+              setShowPlan(true);
+            } else {
+              // If no plan exists, remove the view parameter
+              router.push(`/plan/${planId}`, { scroll: false });
+              hasLoadedPlanFromUrlRef.current = false;
+            }
+          }
+        } catch (error) {
+          console.error("Failed to load generated plan:", error);
+          // On error, remove the view parameter
+          router.push(`/plan/${planId}`, { scroll: false });
+          hasLoadedPlanFromUrlRef.current = false;
+        }
+      }
+      loadGeneratedPlan();
+    }
+  }, [planId, searchParams, router]);
 
   // Load existing messages
   useEffect(() => {
@@ -417,13 +457,17 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
     }
   }
 
-  async function handleGeneratePlan() {
+  async function handleGeneratePlan(instructions?: string) {
     setIsGeneratingPlan(true);
     setShowPlan(true);
+    // Update URL to include view=plan parameter for bookmarking
+    router.push(`/plan/${planId}?view=plan`, { scroll: false });
 
     try {
       const res = await fetch(`/api/plans/${planId}/generate`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instructions: instructions || "" }),
       });
 
       if (!res.ok) {
@@ -460,6 +504,22 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
     }
   }
 
+  async function handleRegeneratePlan(instructions: string) {
+    await handleGeneratePlan(instructions);
+  }
+
+  function handleContinueChatting() {
+    setShowPlan(false);
+    // Clear generated plan state so the Generate button appears again
+    setGeneratedPlan(null);
+    // Update URL to remove view parameter
+    router.push(`/plan/${planId}`, { scroll: false });
+    // Focus the textarea when returning to chat
+    setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 100);
+  }
+
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -485,7 +545,10 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
         planText={generatedPlan}
         planTitle={planTitle}
         onBack={() => setShowPlan(false)}
+        onContinueChatting={handleContinueChatting}
+        onRegenerate={handleRegeneratePlan}
         planId={planId}
+        isGenerating={isGeneratingPlan}
       />
     );
   }
@@ -602,7 +665,7 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleGeneratePlan}
+                onClick={() => handleGeneratePlan()}
                 disabled={isGeneratingPlan}
                 className="gap-2"
               >

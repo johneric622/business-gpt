@@ -4,14 +4,26 @@ import React from "react"
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Download, ArrowLeft, Loader2 } from "lucide-react";
+import { Download, ArrowLeft, Loader2, MessageSquare, RefreshCw } from "lucide-react";
 import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 
 interface PlanViewerProps {
   planText: string;
   planTitle: string;
   onBack: () => void;
+  onContinueChatting: () => void;
+  onRegenerate: (instructions: string) => Promise<void>;
   planId: string;
+  isGenerating?: boolean;
 }
 
 function renderMarkdown(text: string) {
@@ -37,9 +49,18 @@ function renderMarkdown(text: string) {
         </h3>
       );
     } else if (line.startsWith("- ")) {
+      const content = line.slice(2);
+      // Handle inline bold text within list items
+      const parts = content.split(/(\*\*.*?\*\*)/g);
       elements.push(
         <li key={i} className="ml-4 text-sm leading-relaxed text-foreground list-disc">
-          {line.slice(2)}
+          {parts.map((part, idx) => 
+            part.startsWith("**") && part.endsWith("**") ? (
+              <strong key={idx}>{part.slice(2, -2)}</strong>
+            ) : (
+              <span key={idx}>{part}</span>
+            )
+          )}
         </li>
       );
     } else if (line.startsWith("**") && line.endsWith("**")) {
@@ -51,9 +72,17 @@ function renderMarkdown(text: string) {
     } else if (line.trim() === "") {
       elements.push(<div key={i} className="h-2" />);
     } else {
+      // Process inline bold text in regular paragraphs
+      const parts = line.split(/(\*\*.*?\*\*)/g);
       elements.push(
         <p key={i} className="text-sm leading-relaxed text-foreground">
-          {line}
+          {parts.map((part, idx) => 
+            part.startsWith("**") && part.endsWith("**") ? (
+              <strong key={idx}>{part.slice(2, -2)}</strong>
+            ) : (
+              <span key={idx}>{part}</span>
+            )
+          )}
         </p>
       );
     }
@@ -62,8 +91,13 @@ function renderMarkdown(text: string) {
   return elements;
 }
 
-export function PlanViewer({ planText, planTitle, onBack, planId }: PlanViewerProps) {
+export function PlanViewer({ planText, planTitle, onBack, onContinueChatting, onRegenerate, planId, isGenerating = false }: PlanViewerProps) {
   const [downloading, setDownloading] = useState(false);
+  const [showRegenerateDialog, setShowRegenerateDialog] = useState(false);
+  const [instructions, setInstructions] = useState("");
+  const [regenerating, setRegenerating] = useState(false);
+  
+  const isProcessing = regenerating || isGenerating;
 
   async function handleDownloadPDF() {
     setDownloading(true);
@@ -124,46 +158,111 @@ export function PlanViewer({ planText, planTitle, onBack, planId }: PlanViewerPr
       const lines = planText.split("\n");
       for (const line of lines) {
         if (line.startsWith("## ")) {
-          checkPageBreak(16);
-          y += 8;
+          checkPageBreak(20);
+          y += 12;
+          const headingText = line.slice(3).trim();
           doc.setFontSize(16);
           doc.setFont("helvetica", "bold");
-          doc.text(line.slice(3), margin, y);
-          y += 3;
+          doc.text(headingText, margin, y);
+          doc.setFont("helvetica", "normal"); // Reset to normal after heading
+          y += 5;
           doc.setDrawColor(200, 200, 200);
           doc.line(margin, y, pageWidth - margin, y);
-          y += 6;
+          y += 10;
         } else if (line.startsWith("### ")) {
-          checkPageBreak(12);
-          y += 5;
+          checkPageBreak(15);
+          y += 8;
+          const subHeadingText = line.slice(4).trim();
           doc.setFontSize(13);
           doc.setFont("helvetica", "bold");
-          doc.text(line.slice(4), margin, y);
-          y += 6;
+          doc.text(subHeadingText, margin, y);
+          doc.setFont("helvetica", "normal"); // Reset to normal after subheading
+          y += 10;
         } else if (line.startsWith("- ")) {
           checkPageBreak(8);
           doc.setFontSize(10);
           doc.setFont("helvetica", "normal");
-          const splitLines = doc.splitTextToSize(
-            `  \u2022  ${line.slice(2)}`,
-            contentWidth
-          );
-          for (const sl of splitLines) {
-            checkPageBreak(5);
-            doc.text(sl, margin, y);
-            y += 5;
+          const content = line.slice(2);
+          // Process inline bold text: split by **text** patterns
+          const parts = content.split(/(\*\*.*?\*\*)/g);
+          let currentX = margin + 8;
+          doc.text("\u2022", margin, y);
+          
+          for (const part of parts) {
+            if (!part) continue;
+            
+            if (part.startsWith("**") && part.endsWith("**")) {
+              // Bold text
+              const boldText = part.slice(2, -2);
+              doc.setFont("helvetica", "bold");
+              const wrapped = doc.splitTextToSize(boldText, contentWidth - 8);
+              for (let i = 0; i < wrapped.length; i++) {
+                if (i > 0) {
+                  y += 5;
+                  currentX = margin + 8;
+                  checkPageBreak(5);
+                }
+                doc.text(wrapped[i], currentX, y);
+                currentX = margin + 8 + doc.getTextWidth(wrapped[i]);
+              }
+              doc.setFont("helvetica", "normal");
+            } else {
+              // Normal text
+              const wrapped = doc.splitTextToSize(part, contentWidth - 8);
+              for (let i = 0; i < wrapped.length; i++) {
+                if (i > 0) {
+                  y += 5;
+                  currentX = margin + 8;
+                  checkPageBreak(5);
+                }
+                doc.text(wrapped[i], currentX, y);
+                currentX = margin + 8 + doc.getTextWidth(wrapped[i]);
+              }
+            }
           }
+          y += 6;
         } else if (line.trim() === "") {
-          y += 3;
+          y += 4;
         } else {
           doc.setFontSize(10);
           doc.setFont("helvetica", "normal");
-          const splitLines = doc.splitTextToSize(line, contentWidth);
-          for (const sl of splitLines) {
-            checkPageBreak(5);
-            doc.text(sl, margin, y);
-            y += 5;
+          // Process inline bold text in regular paragraphs
+          const parts = line.split(/(\*\*.*?\*\*)/g);
+          let currentX = margin;
+          
+          for (const part of parts) {
+            if (!part) continue;
+            
+            if (part.startsWith("**") && part.endsWith("**")) {
+              // Bold text
+              const boldText = part.slice(2, -2);
+              doc.setFont("helvetica", "bold");
+              const wrapped = doc.splitTextToSize(boldText, contentWidth);
+              for (let i = 0; i < wrapped.length; i++) {
+                if (i > 0 || currentX > margin) {
+                  y += 5;
+                  currentX = margin;
+                  checkPageBreak(5);
+                }
+                doc.text(wrapped[i], currentX, y);
+                currentX = margin + doc.getTextWidth(wrapped[i]);
+              }
+              doc.setFont("helvetica", "normal");
+            } else {
+              // Normal text
+              const wrapped = doc.splitTextToSize(part, contentWidth - (currentX - margin));
+              for (let i = 0; i < wrapped.length; i++) {
+                if (i > 0 || currentX > margin) {
+                  y += 5;
+                  currentX = margin;
+                  checkPageBreak(5);
+                }
+                doc.text(wrapped[i], currentX, y);
+                currentX = margin + doc.getTextWidth(wrapped[i]);
+              }
+            }
           }
+          y += 6;
         }
       }
 
@@ -174,21 +273,57 @@ export function PlanViewer({ planText, planTitle, onBack, planId }: PlanViewerPr
     }
   }
 
+  async function handleRegenerate() {
+    if (!instructions.trim()) {
+      return;
+    }
+    
+    // Close dialog immediately when user clicks Regenerate
+    setShowRegenerateDialog(false);
+    const userInstructions = instructions.trim();
+    setInstructions("");
+    
+    setRegenerating(true);
+    try {
+      await onRegenerate(userInstructions);
+    } catch (error) {
+      console.error("Regeneration error:", error);
+      // Reopen dialog on error so user can try again
+      setShowRegenerateDialog(true);
+      setInstructions(userInstructions);
+    } finally {
+      setRegenerating(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onBack}
-          className="gap-1.5 text-xs"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to Editor
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onContinueChatting}
+            disabled={isProcessing}
+            className="gap-1.5 text-xs"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            Continue Chatting
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowRegenerateDialog(true)}
+            disabled={isProcessing}
+            className="gap-1.5 text-xs"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Regenerate Plan
+          </Button>
+        </div>
         <Button
           onClick={handleDownloadPDF}
-          disabled={downloading}
+          disabled={downloading || isProcessing}
           className="gap-2"
         >
           {downloading ? (
@@ -199,6 +334,55 @@ export function PlanViewer({ planText, planTitle, onBack, planId }: PlanViewerPr
           Download PDF
         </Button>
       </div>
+
+      <Dialog open={showRegenerateDialog} onOpenChange={setShowRegenerateDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Regenerate Business Plan</DialogTitle>
+            <DialogDescription>
+              What would you like to change? For example: "Make it more detailed", "Remove financial projections", "Add marketing strategy section", etc.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Textarea
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              placeholder="Enter your instructions here..."
+              className="min-h-[120px] resize-none"
+              disabled={regenerating}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowRegenerateDialog(false);
+                setInstructions("");
+              }}
+              disabled={regenerating}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRegenerate}
+              disabled={!instructions.trim() || regenerating}
+              className="gap-2"
+            >
+              {regenerating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Regenerating...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-4 w-4" />
+                  Regenerate
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Card className="border-border">
         <CardContent className="p-6 sm:p-8">
