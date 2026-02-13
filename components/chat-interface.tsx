@@ -7,6 +7,7 @@ import { Loader2, Send, Download, Sparkles, Copy, Check } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { PlanViewer } from "./plan-viewer";
+import { mutate } from "swr";
 
 interface Message {
   id: string;
@@ -129,11 +130,16 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const isCreatingWelcomeRef = useRef(false);
+  const hasAutoRenamedRef = useRef(false);
 
   // Load existing messages
   useEffect(() => {
     let isCancelled = false;
     isCreatingWelcomeRef.current = false;
+    
+    // Check if plan title is already non-default (already renamed)
+    const defaultTitles = ["New Business Plan", "Untitled Plan", "Business Plan"];
+    hasAutoRenamedRef.current = !defaultTitles.includes(planTitle);
 
     async function loadMessages() {
       try {
@@ -355,6 +361,48 @@ export function ChatInterface({ planId, planTitle }: ChatInterfaceProps) {
           content: assistantContent,
         }),
       });
+
+      // Auto-rename plan title after 2 user messages using AI
+      const userMessages = [...updatedMessages, assistantMessage].filter(
+        (msg) => msg.role === "user"
+      );
+      const defaultTitles = ["New Business Plan", "Untitled Plan", "Business Plan"];
+      const isDefaultTitle = defaultTitles.includes(planTitle);
+
+      if (
+        userMessages.length == 2 &&
+        isDefaultTitle &&
+        !hasAutoRenamedRef.current
+      ) {
+        hasAutoRenamedRef.current = true;
+        
+        // Generate title using AI
+        try {
+          const titleRes = await fetch(`/api/plans/${planId}/title`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+
+          if (titleRes.ok) {
+            const { title: newTitle } = await titleRes.json();
+            
+            // Update plan title
+            await fetch(`/api/plans/${planId}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ title: newTitle }),
+            });
+            
+            // Invalidate SWR cache to refresh sidebar
+            mutate("/api/plans");
+          } else {
+            throw new Error("Failed to generate title");
+          }
+        } catch (error) {
+          console.error("Failed to auto-rename plan:", error);
+          hasAutoRenamedRef.current = false; // Allow retry
+        }
+      }
     } catch (error) {
       console.error("Chat error:", error);
       const errorMessage: Message = {
